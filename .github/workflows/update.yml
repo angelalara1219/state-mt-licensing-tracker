@@ -1,0 +1,51 @@
+name: Weekly licensing update
+
+on:
+  schedule:
+    # Mondays, 14:23 UTC (7:23 a.m. Arizona)
+    - cron: "23 14 * * 1"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+
+      - name: Run tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Check sources
+        id: watch
+        run: |
+          python -m tracker.watch | tee watch.log
+          echo "summary<<EOF" >> "$GITHUB_OUTPUT"
+          cat watch.log >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Commit changes
+        env:
+          SUMMARY: ${{ steps.watch.outputs.summary }}
+        run: |
+          if git diff --quiet -- data README.md && [ -z "$(git status --porcelain data)" ]; then
+            echo "No changes this week."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data README.md
+          git commit -m "Licensing update $(date -u +%Y-%m-%d)" -m "$SUMMARY"
+          git push
